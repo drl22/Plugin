@@ -13,6 +13,9 @@ NewProjectAudioProcessorEditor::NewProjectAudioProcessorEditor (NewProjectAudioP
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
     setSize (720, 460);
+    // remember the "base" collapsed editor height so we can expand/collapse
+    // the window downward when the piano toggles.
+    baseEditorHeight = getHeight();
 
     // ---- Waveform selector ----
     waveSelector.selectedWave = audioProcessor.paramWaveType->get();
@@ -66,6 +69,30 @@ NewProjectAudioProcessorEditor::NewProjectAudioProcessorEditor (NewProjectAudioP
     // ---- ADSR display ----
     addAndMakeVisible (adsrDisplay);
 
+    // ---- Piano preview ----
+    // When the piano header is clicked the component toggles its expanded flag.
+
+    piano.onToggle = [this]()
+    {
+        const int ph = piano.getPreferredHeight();
+        const int collapsed = piano.collapsedHeight;
+        const int delta = ph - collapsed;
+
+        if (piano.expanded)
+        {
+            // expand editor downward by delta
+            setSize (getWidth(), baseEditorHeight + delta);
+        }
+        else
+        {
+            // collapse back to base height
+            setSize (getWidth(), baseEditorHeight);
+        }
+
+        resized();
+    };
+    addAndMakeVisible (piano);
+
     syncSlidersToParams();
     startTimerHz (30);
 }
@@ -75,7 +102,7 @@ NewProjectAudioProcessorEditor::~NewProjectAudioProcessorEditor()
     stopTimer();
 }
 
-//==============================================================================
+
 void NewProjectAudioProcessorEditor::syncSlidersToParams()
 {
     knobAttack.slider.setValue  (audioProcessor.paramAttack->get(),  juce::dontSendNotification);
@@ -132,35 +159,30 @@ void NewProjectAudioProcessorEditor::timerCallback()
     }
 }
 
-//==============================================================================
+
 void NewProjectAudioProcessorEditor::paint (juce::Graphics& g)
 {
     const float W = (float)getWidth();
     const float H = (float)getHeight();
 
-    // ---- Background ----
-    g.setGradientFill (juce::ColourGradient (
-        juce::Colour (0xff070e18), 0.0f, 0.0f,
-        juce::Colour (0xff0b1c2c), W, H, false));
-    g.fillRect (0.0f, 0.0f, W, H);
+    // ---- Background (flat black/dark grey) ----
+    g.fillAll (juce::Colour (0xff0b0b0b)); // solid dark background
 
-    // Dot-grid texture
-    g.setColour (juce::Colour (0x0800e5ff));
+    // Subtle dot texture (very low-contrast grey)
+    g.setColour (juce::Colour (0x12ffffff)); // very low alpha white
     for (float x = 0; x < W; x += 24.0f)
         for (float y = 0; y < H; y += 24.0f)
             g.fillEllipse (x, y, 1.5f, 1.5f);
 
     // ---- Title bar ----
-    g.setColour (juce::Colour (0xff040c14));
+    g.setColour (juce::Colour (0xff1a1a1a));
     g.fillRect (0.0f, 0.0f, W, 44.0f);
-    g.setColour (juce::Colour (0xff1a3a4a));
-    g.drawHorizontalLine (44, 0.0f, W);
 
-    g.setColour (juce::Colour (0xff00e5ff));
+    g.setColour (juce::Colour (0xffffffff));
     g.setFont (juce::Font (juce::FontOptions (20.0f).withStyle ("Bold")));
     g.drawText ("POLY SYNTH", 16, 7, 220, 28, juce::Justification::left);
 
-    g.setColour (juce::Colour (0xff1e4a5a));
+    g.setColour (juce::Colour (0xffbfbfbf));
     g.setFont (juce::Font (juce::FontOptions (9.5f)));
     g.drawText ("sine  /  saw  /  triangle  /  square", 16, 28, 300, 13,
                 juce::Justification::left);
@@ -168,17 +190,15 @@ void NewProjectAudioProcessorEditor::paint (juce::Graphics& g)
     // Voice counter — top right of title bar
     {
         const int vcX = (int)W - 160, vcY = 6;
-        g.setColour (juce::Colour (0xff0d1f2d));
+        g.setColour (juce::Colour (0xff0f0f0f));
         g.fillRoundedRectangle ((float)vcX, (float)vcY, 148.0f, 32.0f, 4.0f);
-        g.setColour (juce::Colour (0xff1a3a4a));
-        g.drawRoundedRectangle ((float)vcX, (float)vcY, 148.0f, 32.0f, 4.0f, 1.0f);
 
-        g.setColour (juce::Colour (0xff2a6a7a));
+        g.setColour (juce::Colour (0xffcfcfcf));
         g.setFont (juce::Font (juce::FontOptions (8.0f).withStyle ("Bold")));
         g.drawText ("VOICES", vcX + 4, vcY + 3, 44, 11, juce::Justification::left);
 
         bool hasV = displayedVoiceCount > 0;
-        g.setColour (hasV ? juce::Colour (0xff00e5ff) : juce::Colour (0xff1a3a4a));
+        g.setColour (hasV ? juce::Colour (0xffffffff) : juce::Colour (0xff7a7a7a));
         g.setFont (juce::Font (juce::FontOptions (18.0f).withStyle ("Bold")));
         g.drawText (juce::String (displayedVoiceCount), vcX + 4, vcY + 10, 36, 20,
                     juce::Justification::left);
@@ -190,8 +210,8 @@ void NewProjectAudioProcessorEditor::paint (juce::Graphics& g)
         {
             float dx = (float)(dsx + (i % 8) * dotSp);
             float dy = (float)(dsy + (i / 8) * dotSp);
-            g.setColour (i < displayedVoiceCount ? juce::Colour (0xff00e5ff)
-                                                  : juce::Colour (0xff1a3a4a));
+            g.setColour (i < displayedVoiceCount ? juce::Colour (0xffffffff)
+                                                  : juce::Colour (0xff3a3a3a));
             g.fillEllipse (dx, dy, (float)dotS, (float)dotS);
         }
     }
@@ -200,27 +220,20 @@ void NewProjectAudioProcessorEditor::paint (juce::Graphics& g)
     const float oscPanX = 10.0f, oscPanY = 52.0f;
     const float oscPanW = 470.0f, oscPanH = H - 60.0f;
 
-    g.setColour (juce::Colour (0xff060e18));
+    g.setColour (juce::Colour (0xff121212));
     g.fillRoundedRectangle (oscPanX, oscPanY, oscPanW, oscPanH, 8.0f);
-    g.setColour (juce::Colour (0xff1a3550));
-    g.drawRoundedRectangle (oscPanX, oscPanY, oscPanW, oscPanH, 8.0f, 1.5f);
 
     // Oscillator panel title strip
-    g.setColour (juce::Colour (0xff091525));
+    g.setColour (juce::Colour (0xff161616));
     g.fillRoundedRectangle (oscPanX, oscPanY, oscPanW, 26.0f, 8.0f);
-    g.setColour (juce::Colour (0xff1a3550));
-    g.drawHorizontalLine ((int)(oscPanY + 26), oscPanX, oscPanX + oscPanW);
-    g.setColour (juce::Colour (0xff00e5ff));
+
+    g.setColour (juce::Colour (0xffffffff));
     g.setFont (juce::Font (juce::FontOptions (10.0f).withStyle ("Bold")));
     g.drawText ("OSCILLATOR", (int)oscPanX + 12, (int)oscPanY + 6, 120, 14,
                 juce::Justification::left);
 
-    // Divider between waveform area and unison area
-    g.setColour (juce::Colour (0xff132030));
-    g.drawHorizontalLine ((int)(oscPanY + 26 + 200), oscPanX + 8, oscPanX + oscPanW - 8);
-
     // Sub-label: WAVEFORM
-    g.setColour (juce::Colour (0xff2a5a6a));
+    g.setColour (juce::Colour (0xff9aa0a6));
     g.setFont (juce::Font (juce::FontOptions (8.5f).withStyle ("Bold")));
     g.drawText ("WAVEFORM", (int)oscPanX + 12, (int)(oscPanY + 30), 80, 12,
                 juce::Justification::left);
@@ -237,23 +250,19 @@ void NewProjectAudioProcessorEditor::paint (juce::Graphics& g)
     const float envPanX = 488.0f, envPanY = 52.0f;
     const float envPanW = W - envPanX - 10.0f, envPanH = H - 60.0f;
 
-    g.setColour (juce::Colour (0xff060e18));
+    g.setColour (juce::Colour (0xff121212));
     g.fillRoundedRectangle (envPanX, envPanY, envPanW, envPanH, 8.0f);
-    g.setColour (juce::Colour (0xff1a3550));
-    g.drawRoundedRectangle (envPanX, envPanY, envPanW, envPanH, 8.0f, 1.5f);
 
     // Envelope panel title strip
-    g.setColour (juce::Colour (0xff091525));
+    g.setColour (juce::Colour (0xff161616));
     g.fillRoundedRectangle (envPanX, envPanY, envPanW, 26.0f, 8.0f);
-    g.setColour (juce::Colour (0xff1a3550));
-    g.drawHorizontalLine ((int)(envPanY + 26), envPanX, envPanX + envPanW);
-    g.setColour (juce::Colour (0xff00e5ff));
+
+    g.setColour (juce::Colour (0xffffffff));
     g.setFont (juce::Font (juce::FontOptions (10.0f).withStyle ("Bold")));
     g.drawText ("ENVELOPE", (int)envPanX + 12, (int)envPanY + 6, 100, 14,
                 juce::Justification::left);
 }
 
-//==============================================================================
 void NewProjectAudioProcessorEditor::resized()
 {
     // ---- Oscillator panel layout ----
@@ -282,4 +291,10 @@ void NewProjectAudioProcessorEditor::resized()
     knobDecay.setBounds   (kCol2 + 10,   kRow1, kW + 10, kH);
     knobSustain.setBounds (kCol1,        kRow2, kW + 10, kH);
     knobRelease.setBounds (kCol2 + 10,   kRow2, kW + 10, kH);
+
+    // ---- Piano layout (bottom) ----
+    int ph = piano.getPreferredHeight();
+
+    piano.setBounds (0, getHeight() - ph, getWidth(), ph);
+    piano.resized(); 
 }

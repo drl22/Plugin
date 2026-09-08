@@ -238,6 +238,11 @@ public:
 
     std::atomic<int> activeVoiceCount{ 0 };
 
+    // GUI -> audio helpers: safe entrypoints for the editor to trigger note on/off
+    // These acquire the processor callback lock and operate on voices safely.
+    void handleGuiNoteOn  (int midiNote, float velocity);
+    void handleGuiNoteOff (int midiNote);
+
 private:
     static constexpr int MAX_POLY = 16;
     SynthVoice voices[MAX_POLY];

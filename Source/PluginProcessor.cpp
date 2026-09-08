@@ -7,7 +7,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-//==============================================================================
+
 NewProjectAudioProcessor::NewProjectAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
     : AudioProcessor(BusesProperties()
@@ -53,7 +53,7 @@ NewProjectAudioProcessor::NewProjectAudioProcessor()
 
 NewProjectAudioProcessor::~NewProjectAudioProcessor() {}
 
-//==============================================================================
+
 const juce::String NewProjectAudioProcessor::getName() const { return JucePlugin_Name; }
 bool NewProjectAudioProcessor::acceptsMidi()  const { return true; }
 bool NewProjectAudioProcessor::producesMidi() const { return false; }
@@ -66,7 +66,7 @@ void NewProjectAudioProcessor::setCurrentProgram(int) {}
 const juce::String NewProjectAudioProcessor::getProgramName(int) { return {}; }
 void NewProjectAudioProcessor::changeProgramName(int, const juce::String&) {}
 
-//==============================================================================
+
 void NewProjectAudioProcessor::prepareToPlay(double sampleRate, int)
 {
     currentSampleRate = sampleRate;
@@ -85,7 +85,6 @@ bool NewProjectAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts
 }
 #endif
 
-//==============================================================================
 void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     juce::MidiBuffer& midiMessages)
 {
@@ -165,7 +164,7 @@ void NewProjectAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     activeVoiceCount.store(count);
 }
 
-//==============================================================================
+
 SynthVoice* NewProjectAudioProcessor::findFreeVoice()
 {
     for (auto& v : voices)
@@ -191,13 +190,53 @@ SynthVoice* NewProjectAudioProcessor::findVoiceForNote(int note)
 }
 
 //==============================================================================
+// GUI-safe wrappers to trigger notes from the editor.
+// These acquire the processor callback lock so they don't race with the audio callback.
+void NewProjectAudioProcessor::handleGuiNoteOn(int midiNote, float velocity)
+{
+    const juce::ScopedLock sl(getCallbackLock());
+
+    const float aRate = timeToRate(paramAttack->get());
+    const float dRate = timeToRate(paramDecay->get());
+    const float sLvl = paramSustain->get();
+    const float rRate = timeToRate(paramRelease->get());
+    const int   unison = paramUnison->get();
+    const float detune = paramDetune->get();
+
+    SynthVoice* v = findVoiceForNote(midiNote);
+    if (v == nullptr) v = findFreeVoice();
+    if (v != nullptr)
+    {
+        v->noteOn(midiNote, velocity, currentSampleRate,
+            unison, detune, aRate, dRate, sLvl, rRate);
+    }
+
+    int count = 0;
+    for (auto& vv : voices) if (vv.isActive) ++count;
+    activeVoiceCount.store(count);
+}
+
+void NewProjectAudioProcessor::handleGuiNoteOff(int midiNote)
+{
+    const juce::ScopedLock sl(getCallbackLock());
+
+    SynthVoice* v = findVoiceForNote(midiNote);
+    if (v != nullptr)
+        v->noteOff();
+
+    int count = 0;
+    for (auto& vv : voices) if (vv.isActive) ++count;
+    activeVoiceCount.store(count);
+}
+
+
 bool NewProjectAudioProcessor::hasEditor() const { return true; }
 juce::AudioProcessorEditor* NewProjectAudioProcessor::createEditor()
 {
     return new NewProjectAudioProcessorEditor(*this);
 }
 
-//==============================================================================
+
 void NewProjectAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     juce::MemoryOutputStream s(destData, true);
@@ -225,7 +264,7 @@ void NewProjectAudioProcessor::setStateInformation(const void* data, int sizeInB
     *paramDetune = s.readFloat();
 }
 
-//==============================================================================
+
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new NewProjectAudioProcessor();
